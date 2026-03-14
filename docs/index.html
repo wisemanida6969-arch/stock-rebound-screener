@@ -44,25 +44,32 @@
     <span id="api-hint"><b>Vercel에 올리면</b> 서버가 Yahoo 대신 받아줘서 <b>프록시 실패 없이</b> 안정적입니다. (아래 배포 안내)</span>
   </div>
   <h1>실시간 차트</h1>
-  <p class="sub">같은 주소에 <code>/api/chart</code> 가 있으면 자동 사용 · 없으면 무료 프록시 순차 시도.</p>
+  <p class="sub">같은 주소에 <code>/api/chart</code> 가 있으면 자동 사용 · <a href="/iphone/" style="color:#ff6b35">아이폰 전용 화면</a> · 없으면 무료 프록시 순차 시도.</p>
 
   <div class="box">
-    <h3>① 티커만 넣고 바로 보기 (가장 빠름)</h3>
-    <input type="text" id="quick" placeholder="예: AAPL, NVDA, TSLA" value="AAPL" autocomplete="off" autocapitalize="characters" />
-    <button type="button" id="btn-quick">실시간 차트 (1분봉 · 15초 갱신)</button>
+    <h3>① 스크리너 → ✓ 체크 → 차트만 보기</h3>
+    <select id="n" aria-label="종목 수"><option value="12" selected>12종목 (빠름)</option><option value="18">18종목</option><option value="24">24종목</option></select>
+    <label><input type="checkbox" id="live" checked /> 체크 종목 차트 자동 갱신</label>
+    <p class="hint" style="margin:0 0 8px">표 왼쪽 <b>✓</b> 를 켠 종목만 아래에서 차트로 볼 수 있습니다.</p>
+    <button type="button" class="secondary" id="run">스크리닝 실행</button>
+    <div class="progress" id="prog"><i id="progi"></i></div>
+    <div id="wrap-table" style="display:none">
+      <table><thead><tr><th style="width:40px">✓</th><th>티커</th><th>점수</th><th>RSI</th><th>낙폭%</th><th>종가</th></tr></thead><tbody id="tb"></tbody></table>
+    </div>
+    <div id="chart-controls" style="display:none;margin-top:14px">
+      <label for="chartSymbol"><b>실시간 차트 — 체크한 종목 중 선택</b></label>
+      <select id="chartSymbol" style="margin-top:8px"></select>
+      <button type="button" class="btn" id="btn-chart-checked" style="margin-top:10px">이 종목 차트 보기</button>
+    </div>
     <div class="live" id="live-msg"></div>
     <div id="chart" style="display:none"></div>
   </div>
 
   <div class="box">
-    <h3>② 스크리너 (일봉 순위 + 종목 탭 시 분봉)</h3>
-    <select id="n" aria-label="종목 수"><option value="12" selected>12종목 (빠름)</option><option value="18">18종목</option><option value="24">24종목</option></select>
-    <label><input type="checkbox" id="live" checked /> 선택 종목 차트 자동 갱신 (15초 · 화면 켜져 있을 때만)</label>
-    <button type="button" class="secondary" id="run">스크리닝 실행</button>
-    <div class="progress" id="prog"><i id="progi"></i></div>
-    <div id="wrap-table" style="display:none">
-      <table><thead><tr><th>티커</th><th>점수</th><th>RSI</th><th>낙폭%</th><th>종가</th></tr></thead><tbody id="tb"></tbody></table>
-    </div>
+    <h3>② 임의 티커 (체크 없이 바로 차트)</h3>
+    <input type="text" id="quick" placeholder="예: AAPL" value="AAPL" autocomplete="off" autocapitalize="characters" />
+    <button type="button" id="btn-quick">실시간 차트</button>
+    <p class="hint" style="margin:0">스크리너와 별개로 티커만 입력해 볼 때 사용.</p>
   </div>
 
   <details open>
@@ -348,36 +355,77 @@
     }, SCRAPE_CONCURRENCY);
     rowsData = results.filter(Boolean);
     rowsData.sort((a, b) => b.total - a.total);
+    function refreshChartSelect() {
+      const sel = document.getElementById("chartSymbol");
+      const checked = [...document.querySelectorAll("#tb input.pick:checked")].map((el) => el.dataset.ticker);
+      sel.innerHTML = checked.length ? checked.map((t) => "<option value=\"" + t + "\">" + t + "</option>").join("") : "<option value=\"\">— 체크한 종목 없음 —</option>";
+      document.getElementById("chart-controls").style.display = checked.length ? "block" : "none";
+    }
+    async function loadChartForRow(row) {
+      if (!row) return;
+      chartTicker = row.ticker;
+      liveRange = "1d";
+      liveInterval = "1m";
+      if (row.rowsDay && row.rowsDay.length) {
+        drawChart(row.ticker, row.rowsDay, "일봉·즉시");
+        document.getElementById("live-msg").textContent = "분봉 로딩…";
+      } else document.getElementById("live-msg").textContent = "차트 로딩…";
+      document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "start" });
+      try {
+        const { rows } = await yahooChart(row.ticker, "1d", "1m");
+        if (rows.length) drawChart(row.ticker, rows, "1분봉");
+        else throw 0;
+      } catch (e) {
+        try {
+          const { rows } = await yahooChart(row.ticker, "5d", "5m");
+          liveRange = "5d";
+          liveInterval = "5m";
+          if (rows.length) drawChart(row.ticker, rows, "5분봉");
+          else if (row.rowsDay) drawChart(row.ticker, row.rowsDay, "일봉");
+        } catch (e2) {
+          if (row.rowsDay) drawChart(row.ticker, row.rowsDay, "일봉");
+        }
+      }
+      if (document.getElementById("live").checked) startLive();
+      document.getElementById("live-msg").textContent = "자동 갱신 (체크 종목만)";
+    }
     rowsData.forEach((row) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = "<td><b>" + row.ticker + "</b></td><td>" + row.total + "</td><td>" + row.rsi + "</td><td>" + row.dd + "</td><td>" + (row.last || "-") + "</td>";
-      tr.onclick = async () => {
-        document.querySelectorAll("#tb tr").forEach(x => x.classList.remove("active"));
-        tr.classList.add("active");
-        chartTicker = row.ticker;
-        liveRange = "1d";
-        liveInterval = "1m";
-        try {
-          const { rows } = await yahooChart(row.ticker, "1d", "1m");
-          if (rows.length) { drawChart(row.ticker, rows, "1분봉"); }
-          else throw 0;
-        } catch (e) {
-          try {
-            const { rows } = await yahooChart(row.ticker, "5d", "5m");
-            liveRange = "5d"; liveInterval = "5m";
-            if (rows.length) drawChart(row.ticker, rows, "5분봉");
-            else if (row.rowsDay) drawChart(row.ticker, row.rowsDay, "일봉");
-          } catch (e2) {
-            if (row.rowsDay) drawChart(row.ticker, row.rowsDay, "일봉");
-          }
-        }
-        document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "start" });
-        if (document.getElementById("live").checked) startLive();
-        document.getElementById("live-msg").textContent = "15초 갱신";
-      };
+      tr.dataset.ticker = row.ticker;
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "pick";
+      cb.dataset.ticker = row.ticker;
+      cb.title = "차트에 넣기";
+      cb.addEventListener("change", refreshChartSelect);
+      const td0 = document.createElement("td");
+      td0.appendChild(cb);
+      tr.appendChild(td0);
+      const tdR = document.createElement("td");
+      tdR.innerHTML = "<b>" + row.ticker + "</b>";
+      tr.appendChild(tdR);
+      ["total", "rsi", "dd", "last"].forEach((k) => {
+        const td = document.createElement("td");
+        td.textContent = row[k] != null ? row[k] : "-";
+        tr.appendChild(td);
+      });
       tb.appendChild(tr);
     });
     document.getElementById("wrap-table").style.display = "block";
+    refreshChartSelect();
+    document.getElementById("btn-chart-checked").onclick = async function () {
+      const t = document.getElementById("chartSymbol").value;
+      if (!t) {
+        document.getElementById("live-msg").textContent = "표에서 ✓ 체크 후 선택하세요.";
+        return;
+      }
+      const row = rowsData.find((r) => r.ticker === t);
+      document.querySelectorAll("#tb tr").forEach((x) => x.classList.toggle("active", x.dataset.ticker === t));
+      await loadChartForRow(row);
+    };
+    document.getElementById("chartSymbol").onchange = function () {
+      document.getElementById("btn-chart-checked").click();
+    };
     btn.disabled = false;
     document.getElementById("prog").style.display = "none";
   };

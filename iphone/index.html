@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover, user-scalable=yes" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="미국주식" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect fill='%23ff6b35' width='180' height='180' rx='40'/%3E%3Ctext x='90' y='115' font-size='72' text-anchor='middle' fill='%23111' font-family='system-ui'%3E%E2%9C%93%3C/text%3E%3C/svg%3E" />
+  <title>미국주식 · 아이폰</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    :root {
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-x: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { height: 100%; }
+    body {
+      margin: 0; min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: #0a0a0f; color: #f2f2f7;
+      padding: var(--safe-t) var(--safe-x) calc(12px + var(--safe-b));
+      padding-bottom: calc(88px + var(--safe-b));
+    }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      margin: 0 calc(-1 * var(--safe-x)) 12px;
+      padding: 10px var(--safe-x) 12px;
+      background: rgba(10,10,15,.92);
+      backdrop-filter: saturate(180%) blur(16px);
+      -webkit-backdrop-filter: saturate(180%) blur(16px);
+      border-bottom: 1px solid #2c2c34;
+    }
+    h1 { font-size: 1.05rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.02em; }
+    .tabs { display: flex; gap: 8px; }
+    .tabs button {
+      flex: 1; padding: 12px; font-size: 0.95rem; font-weight: 600;
+      border: none; border-radius: 12px; background: #2c2c34; color: #aaa;
+    }
+    .tabs button.on { background: #ff6b35; color: #111; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    input[type="text"] {
+      width: 100%; padding: 16px 14px; font-size: 1.1rem; border-radius: 14px;
+      border: 1px solid #3a3a44; background: #16161f; color: #fff;
+      margin-bottom: 10px; -webkit-appearance: none;
+    }
+    .btn {
+      width: 100%; padding: 18px; font-size: 1.05rem; font-weight: 700;
+      border: none; border-radius: 14px; background: #ff6b35; color: #111;
+      min-height: 52px;
+    }
+    .btn.secondary { background: #3a3a44; color: #fff; font-weight: 600; }
+    .btn:disabled { opacity: .5; }
+    .hint { font-size: 0.78rem; color: #8e8e93; line-height: 1.45; margin: 12px 0; }
+    .install {
+      background: #1c2e24; color: #9dffb0; padding: 12px 14px; border-radius: 14px;
+      font-size: 0.8rem; line-height: 1.45; margin-bottom: 14px;
+    }
+    #chart { width: 100%; height: min(42vh, 320px); margin-top: 12px; border-radius: 14px; overflow: hidden; }
+    .live { font-size: 0.75rem; color: #8f8; min-height: 2.5em; margin-top: 8px; }
+    select { width: 100%; padding: 14px; font-size: 1rem; border-radius: 12px; background: #16161f; color: #fff; border: 1px solid #3a3a44; margin: 8px 0; }
+    label { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; margin: 10px 0; }
+    table { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+    th, td { padding: 14px 8px; text-align: left; border-bottom: 1px solid #2c2c34; }
+    th { color: #8e8e93; font-weight: 600; }
+    tr.active { background: #2a2218; }
+    #wrap-table { max-height: 38vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; border: 1px solid #2c2c34; margin-top: 10px; }
+    .progress { height: 5px; background: #2c2c34; border-radius: 3px; overflow: hidden; margin: 10px 0; display: none; }
+    .progress i { display: block; height: 100%; background: #ff6b35; width: 0%; }
+    footer.bar {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      padding: 10px var(--safe-x) calc(10px + var(--safe-b));
+      background: rgba(10,10,15,.96);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid #2c2c34; font-size: 0.72rem; color: #636366; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>미국주식 스크리너</h1>
+    <div class="tabs">
+      <button type="button" class="on" id="tab-chart">차트</button>
+      <button type="button" id="tab-rank">순위</button>
+    </div>
+  </header>
+
+  <div class="install">
+    <b>홈 화면에 추가:</b> Safari 하단 <b>공유</b> → <b>홈 화면에 추가</b> → 앱처럼 전체 화면으로 사용.
+  </div>
+
+  <div id="panel-chart" class="panel on">
+    <label style="display:block;margin-bottom:6px;color:#8e8e93;font-size:0.8rem">체크한 종목만 (순위 탭에서 ✓)</label>
+    <select id="chartFromChecked" style="margin-bottom:10px"><option value="">— 순위에서 ✓ 후 선택 —</option></select>
+    <button type="button" class="btn secondary" id="btn-chart-checked-ios" style="margin-bottom:14px">체크 종목 차트</button>
+    <hr style="border-color:#2c2c34;margin:14px 0" />
+    <input type="text" id="quick" placeholder="임의 티커 (예: AAPL)" value="AAPL" autocapitalize="characters" autocomplete="off" enterkeyhint="go" />
+    <button type="button" class="btn" id="btn-quick">임의 티커 차트</button>
+    <p class="hint">Vercel에 올린 주소에서 열면 빠르고 안정적입니다. 같은 사이트의 <code>/api/chart</code> 사용.</p>
+    <div class="live" id="live-msg"></div>
+    <div id="chart" style="display:none"></div>
+  </div>
+
+  <div id="panel-rank" class="panel">
+    <select id="n" aria-label="종목 수">
+      <option value="10">10종목 (빠름)</option>
+      <option value="14" selected>14종목</option>
+      <option value="18">18종목</option>
+    </select>
+    <label><input type="checkbox" id="live" checked /> 차트 자동 갱신</label>
+    <button type="button" class="btn secondary" id="run">순위 스크리닝</button>
+    <div class="progress" id="prog"><i id="progi"></i></div>
+    <p class="hint" style="margin-top:0">왼쪽 <b>✓</b> 체크 → <b>차트</b> 탭에서만 그 종목 차트 가능.</p>
+    <div id="wrap-table" style="display:none">
+      <table><thead><tr><th style="width:36px">✓</th><th>티커</th><th>점수</th><th>RSI</th></tr></thead><tbody id="tb"></tbody></table>
+    </div>
+    <div id="chart-controls-ios" style="display:none;margin-top:12px">
+      <label>체크한 종목 중 차트</label>
+      <select id="chartSymbol-ios"></select>
+      <button type="button" class="btn" id="btn-chart-ios" style="margin-top:8px">차트 보기</button>
+    </div>
+  </div>
+
+  <footer class="bar">아이폰 전용 화면 · 참고용 · 투자 권유 아님</footer>
+
+  <script>
+  const TICKERS = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","JPM","V","UNH","JNJ","WMT","PG","MA","HD","DIS","BAC","XOM","CVX","ABBV","PFE","KO","COST","MRK","AMD","INTC","NFLX","CRM","GE","PYPL","DAL","MAR"];
+  const LIVE_MS = 25000, SCRAPE_CONCURRENCY = 8;
+  let liveTimer = null, chartTicker = null, chartInited = false, liveRange = "1d", liveInterval = "1m";
+
+  document.getElementById("tab-chart").onclick = function () { setTab("chart"); };
+  document.getElementById("tab-rank").onclick = function () { setTab("rank"); };
+  function setTab(name) {
+    document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("on"));
+    if (name === "chart") { document.getElementById("tab-chart").classList.add("on"); document.getElementById("panel-chart").classList.add("on"); }
+    else { document.getElementById("tab-rank").classList.add("on"); document.getElementById("panel-rank").classList.add("on"); }
+  }
+
+  function rsi(closes, p) {
+    p = p || 14;
+    if (closes.length < p + 1) return null;
+    var gains = 0, losses = 0, i, d, avgG, avgL;
+    for (i = 1; i <= p; i++) { d = closes[i] - closes[i - 1]; if (d >= 0) gains += d; else losses -= d; }
+    avgG = gains / p; avgL = losses / p;
+    for (i = p + 1; i < closes.length; i++) {
+      d = closes[i] - closes[i - 1];
+      avgG = (avgG * (p - 1) + (d > 0 ? d : 0)) / p;
+      avgL = (avgL * (p - 1) + (d < 0 ? -d : 0)) / p;
+    }
+    if (avgL === 0) return 100;
+    return 100 - 100 / (1 + avgG / avgL);
+  }
+  function parseYahooJson(text) {
+    if (!text || typeof text !== "string") return null;
+    var s = text.trim(), i = s.indexOf("{");
+    if (i > 0) s = s.slice(i);
+    try {
+      var j = JSON.parse(s);
+      if (j.contents && typeof j.contents === "string") return parseYahooJson(j.contents);
+      return j;
+    } catch (e) { return null; }
+  }
+  function rowsFromYahoo(j) {
+    var r0 = j && j.chart && j.chart.result && j.chart.result[0];
+    if (!r0 || !r0.timestamp || !r0.indicators || !r0.indicators.quote || !r0.indicators.quote[0]) return null;
+    var ts = r0.timestamp, q = r0.indicators.quote[0], o = q.open, h = q.high, l = q.low, c = q.close;
+    var closes = [], rows = [], i;
+    for (i = 0; i < ts.length; i++) {
+      if (c[i] == null) continue;
+      closes.push(c[i]);
+      rows.push({ t: ts[i] * 1000, o: o[i], h: h[i], l: l[i], c: c[i] });
+    }
+    return rows.length ? { closes: closes, rows: rows } : null;
+  }
+  function apiOrigin() {
+    try {
+      if (localStorage.getItem("API_ORIGIN")) return String(localStorage.getItem("API_ORIGIN")).replace(/\/$/, "");
+    } catch (e) {}
+    var o = location.origin;
+    if (o && (location.protocol === "https:" || location.protocol === "http:")) {
+      if (location.pathname.indexOf("/iphone") === 0 || location.pathname.indexOf("/iphone/") >= 0) return o;
+      return o;
+    }
+    return o || "";
+  }
+  async function fetchText(u) {
+    var ctrl = new AbortController(), t = setTimeout(function () { ctrl.abort(); }, 26000);
+    try {
+      var r = await fetch(u, { cache: "no-store", signal: ctrl.signal, mode: "cors" });
+      if (!r.ok) throw new Error(String(r.status));
+      return await r.text();
+    } finally { clearTimeout(t); }
+  }
+  async function yahooChart(ticker, range, interval) {
+    var sym = String(ticker).trim().toUpperCase().replace(/^\+/, "");
+    var origin = apiOrigin();
+    if (origin) {
+      try {
+        var apiUrl = origin + "/api/chart?ticker=" + encodeURIComponent(sym) + "&range=" + encodeURIComponent(range) + "&interval=" + encodeURIComponent(interval);
+        var r = await fetch(apiUrl, { cache: "no-store" });
+        if (r.ok) {
+          var j = await r.json();
+          if (!j.error && j.chart) { var out = rowsFromYahoo(j); if (out) return out; }
+        }
+      } catch (e) {}
+    }
+    var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(sym) + "?range=" + range + "&interval=" + interval;
+    var proxies = [
+      "https://api.allorigins.win/get?url=" + encodeURIComponent(url),
+      "https://corsproxy.io/?" + encodeURIComponent(url),
+      "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url)
+    ];
+    var pu, text, jj, out2, a, b;
+    for (a = 0; a < proxies.length; a++) {
+      try {
+        text = await fetchText(proxies[a]);
+        jj = parseYahooJson(text);
+        if (jj) { out2 = rowsFromYahoo(jj); if (out2) return out2; }
+      } catch (b) {}
+    }
+    if (interval !== "1d" || range !== "1y") return yahooChart(sym, "1y", "1d");
+    throw new Error("fail");
+  }
+  function drawChart(ticker, rows, label) {
+    var x = rows.map(function (r) { return new Date(r.t); });
+    var candle = { x: x, open: rows.map(function (r) { return r.o; }), high: rows.map(function (r) { return r.h; }), low: rows.map(function (r) { return r.l; }), close: rows.map(function (r) { return r.c; }), type: "candlestick", xaxis: "x", yaxis: "y" };
+    var closes = rows.map(function (r) { return r.c; });
+    var rsiSeries = [], i, slice;
+    for (i = 0; i < closes.length; i++) {
+      slice = closes.slice(0, i + 1);
+      rsiSeries.push(slice.length >= 15 ? rsi(slice) : null);
+    }
+    var rsiTrace = { x: x, y: rsiSeries, type: "scatter", xaxis: "x2", yaxis: "y2", line: { color: "#fa0", width: 1 } };
+    var layout = {
+      paper_bgcolor: "#16161f", plot_bgcolor: "#16161f", font: { color: "#ccc", size: 10 },
+      xaxis: { anchor: "y", domain: [0, 1], rangeslider: { visible: false } },
+      yaxis: { domain: [0.35, 1] },
+      xaxis2: { anchor: "y2", domain: [0, 1] },
+      yaxis2: { domain: [0, 0.28], title: "RSI" },
+      margin: { l: 36, r: 6, t: 28, b: 12 },
+      height: Math.min(window.innerHeight * 0.38, 300),
+      showlegend: false,
+      title: { text: ticker + " · " + label, font: { size: 11 } }
+    };
+    document.getElementById("chart").style.display = "block";
+    if (chartInited) Plotly.react("chart", [candle, rsiTrace], layout, { responsive: true, displayModeBar: true });
+    else { Plotly.newPlot("chart", [candle, rsiTrace], layout, { responsive: true, displayModeBar: true }); chartInited = true; }
+  }
+  function stopLive() { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } }
+  function startLive() {
+    stopLive();
+    liveTimer = setInterval(async function () {
+      if (document.hidden || !chartTicker) return;
+      try {
+        var r = await yahooChart(chartTicker, liveRange, liveInterval);
+        if (r.rows.length) drawChart(chartTicker, r.rows, liveInterval === "1m" ? "1분" : "5분");
+        document.getElementById("live-msg").textContent = "갱신 " + new Date().toLocaleTimeString();
+      } catch (e) { document.getElementById("live-msg").textContent = "갱신 실패"; }
+    }, LIVE_MS);
+  }
+  document.getElementById("btn-quick").onclick = async function () {
+    var t = document.getElementById("quick").value.trim().toUpperCase() || "AAPL", btn = this;
+    chartTicker = t; liveRange = "1d"; liveInterval = "1m";
+    btn.disabled = true;
+    document.getElementById("live-msg").textContent = "불러오는 중…";
+    try {
+      var rows, label = "1분";
+      try { rows = (await yahooChart(t, "1d", "1m")).rows; } catch (e1) {
+        try { rows = (await yahooChart(t, "5d", "5m")).rows; liveRange = "5d"; liveInterval = "5m"; label = "5분"; }
+        catch (e2) { rows = (await yahooChart(t, "3mo", "1d")).rows; liveRange = "3mo"; liveInterval = "1d"; label = "일봉"; }
+      }
+      if (rows.length) drawChart(t, rows, label);
+      document.getElementById("live-msg").textContent = "자동 갱신 중";
+      startLive();
+    } catch (e) {
+      document.getElementById("live-msg").innerHTML = "<span style='color:#f88'>실패</span> · Wi‑Fi · 잠시 후 재시도 · Vercel URL 권장";
+    }
+    btn.disabled = false;
+  };
+  function scoreRow(closes, rsiVal) {
+    if (closes.length < 20) return { total: 0, dd: 0 };
+    var hi = Math.max.apply(null, closes), last = closes[closes.length - 1];
+    var dd = hi > 0 ? ((hi - last) / hi) * 100 : 0, s = 0;
+    if (dd > 25) s += 25; else if (dd > 15) s += 18; else if (dd > 8) s += 10;
+    if (rsiVal != null) {
+      if (rsiVal >= 22 && rsiVal <= 38) s += 30;
+      else if (rsiVal > 38 && rsiVal <= 45) s += 18;
+      else if (rsiVal < 22) s += 20;
+      else if (rsiVal <= 55) s += 8;
+    }
+    return { total: Math.round(s * 10) / 10, dd: Math.round(dd * 10) / 10 };
+  }
+  async function runPool(items, worker, n) {
+    var ret = new Array(items.length), idx = 0;
+    async function one() {
+      while (idx < items.length) {
+        var i = idx++;
+        try { ret[i] = await worker(items[i], i); } catch (e) { ret[i] = null; }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(n, items.length) }, function () { return one(); }));
+    return ret;
+  }
+  document.getElementById("run").onclick = async function () {
+    var btn = this, n = parseInt(document.getElementById("n").value, 10), list = TICKERS.slice(0, n);
+    btn.disabled = true; stopLive();
+    document.getElementById("prog").style.display = "block";
+    document.getElementById("progi").style.width = "0%";
+    document.getElementById("wrap-table").style.display = "none";
+    var tb = document.getElementById("tb"); tb.innerHTML = "";
+    var done = 0;
+    var results = await runPool(list, async function (t) {
+      try {
+        var o = await yahooChart(t, "6mo", "1d");
+        var r = rsi(o.closes), sc = scoreRow(o.closes, r);
+        done++; document.getElementById("progi").style.width = (done / list.length * 100) + "%";
+        return { ticker: t, total: sc.total, rsi: r != null ? Math.round(r * 10) / 10 : "-", rowsDay: o.rows };
+      } catch (e) {
+        done++; document.getElementById("progi").style.width = (done / list.length * 100) + "%";
+        return { ticker: t, total: 0, rsi: "-", rowsDay: null };
+      }
+    }, SCRAPE_CONCURRENCY);
+    function syncCheckedSelect() {
+      var checked = [].slice.call(document.querySelectorAll("#tb input.pick-ios:checked")).map(function (el) { return el.dataset.ticker; });
+      var sel = document.getElementById("chartFromChecked");
+      var sel2 = document.getElementById("chartSymbol-ios");
+      var opts = checked.length ? checked.map(function (t) { return "<option value=\"" + t + "\">" + t + "</option>"; }).join("") : "<option value=\"\">— ✓ 체크 —</option>";
+      sel.innerHTML = opts;
+      sel2.innerHTML = opts;
+      document.getElementById("chart-controls-ios").style.display = checked.length ? "block" : "none";
+    }
+    async function loadChartRow(row) {
+      if (!row) return;
+      chartTicker = row.ticker;
+      setTab("chart");
+      if (row.rowsDay && row.rowsDay.length) { drawChart(row.ticker, row.rowsDay, "일봉·즉시"); document.getElementById("live-msg").textContent = "분봉…"; }
+      else document.getElementById("live-msg").textContent = "로딩…";
+      liveRange = "1d"; liveInterval = "1m";
+      try {
+        var rr = await yahooChart(row.ticker, "1d", "1m");
+        drawChart(row.ticker, rr.rows, "1분");
+      } catch (e) {
+        try {
+          var rr2 = await yahooChart(row.ticker, "5d", "5m");
+          liveRange = "5d"; liveInterval = "5m";
+          drawChart(row.ticker, rr2.rows, "5분");
+        } catch (e2) {
+          if (row.rowsDay && row.rowsDay.length) drawChart(row.ticker, row.rowsDay, "일봉");
+        }
+      }
+      document.getElementById("live-msg").textContent = "자동 갱신";
+      if (document.getElementById("live").checked) startLive();
+    }
+    results.filter(Boolean).sort(function (a, b) { return b.total - a.total; }).forEach(function (row) {
+      var tr = document.createElement("tr");
+      tr.dataset.ticker = row.ticker;
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "pick-ios";
+      cb.dataset.ticker = row.ticker;
+      cb.addEventListener("change", syncCheckedSelect);
+      var td0 = document.createElement("td");
+      td0.appendChild(cb);
+      tr.appendChild(td0);
+      var td1 = document.createElement("td");
+      td1.innerHTML = "<b>" + row.ticker + "</b>";
+      tr.appendChild(td1);
+      var td2 = document.createElement("td");
+      td2.textContent = row.total;
+      tr.appendChild(td2);
+      var td3 = document.createElement("td");
+      td3.textContent = row.rsi;
+      tr.appendChild(td3);
+      tb.appendChild(tr);
+    });
+    document.getElementById("wrap-table").style.display = "block";
+    syncCheckedSelect();
+    document.getElementById("btn-chart-checked-ios").onclick = function () {
+      var t = document.getElementById("chartFromChecked").value;
+      if (!t) { document.getElementById("live-msg").textContent = "순위에서 ✓ 체크"; return; }
+      var row = results.filter(Boolean).find(function (r) { return r.ticker === t; });
+      loadChartRow(row);
+    };
+    document.getElementById("btn-chart-ios").onclick = function () {
+      var t = document.getElementById("chartSymbol-ios").value;
+      if (!t) return;
+      var row = results.filter(Boolean).find(function (r) { return r.ticker === t; });
+      setTab("chart");
+      loadChartRow(row);
+    };
+    btn.disabled = false;
+    document.getElementById("prog").style.display = "none";
+  };
+  document.getElementById("live").onchange = function () {
+    if (this.checked && chartTicker) startLive(); else stopLive();
+  };
+  </script>
+</body>
+</html>

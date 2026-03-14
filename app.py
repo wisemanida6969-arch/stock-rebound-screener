@@ -327,7 +327,15 @@ def main():
     display_df = out.head(25).reset_index(drop=True)
 
     st.subheader("추천 순위")
-    st.caption("행 왼쪽 체크/탭으로 **종목을 한 줄 선택**하면 아래에 바로 차트가 열립니다.")
+    top20 = out.head(20)["티커"].tolist()
+    allowed = st.multiselect(
+        "**실시간 차트에 넣을 종목 (체크)** — 체크한 것만 아래 차트로 볼 수 있습니다.",
+        options=top20,
+        default=st.session_state.get("chart_allowed", []),
+        key="chart_allowed_ms",
+    )
+    st.session_state["chart_allowed"] = list(allowed)
+    st.caption("표에서 **행 선택** → 체크 목록 안의 종목만 차트 표시")
     event = st.dataframe(
         display_df,
         use_container_width=True,
@@ -340,18 +348,27 @@ def main():
 
     rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
     if len(rows) > 0:
-        pick = str(display_df.iloc[int(rows[0])]["티커"])
+        cand = str(display_df.iloc[int(rows[0])]["티커"])
+        if allowed and cand not in allowed:
+            st.warning(f"**{cand}** 은(는) 위에서 체크하지 않았습니다. multiselect에 추가하거나 다른 행을 선택하세요.")
+        st.session_state["chart_ticker"] = cand if (not allowed or cand in allowed) else (allowed[0] if allowed else cand)
+    pick = st.session_state.get("chart_ticker") or (allowed[0] if allowed else str(display_df.iloc[0]["티커"]))
+    if allowed and pick not in allowed:
+        pick = allowed[0]
+    if "chart_ticker" not in st.session_state or (allowed and st.session_state["chart_ticker"] not in allowed):
         st.session_state["chart_ticker"] = pick
-    else:
-        pick = st.session_state.get("chart_ticker") or str(display_df.iloc[0]["티커"])
-        if "chart_ticker" not in st.session_state:
-            st.session_state["chart_ticker"] = pick
 
     st.divider()
-    st.subheader(f"실시간 차트 · {pick}")
-    render_live_chart(pick, "5분봉")
+    if not allowed:
+        st.subheader("실시간 차트")
+        st.info("위 **multiselect** 에서 차트로 볼 종목을 **한 개 이상 체크**하세요.")
+    else:
+        pick = st.selectbox("차트 종목 (체크한 목록)", options=allowed, index=allowed.index(pick) if pick in allowed else 0, key="chart_pick_sb")
+        st.session_state["chart_ticker"] = pick
+        st.subheader(f"실시간 차트 · {pick}")
+        render_live_chart(pick, "5분봉")
 
-    st.caption("다른 종목: 표에서 해당 **행을 다시 선택**하세요.")
+    st.caption("체크 목록만 차트 가능 · multiselect에서 종목 추가/제거")
 
     st.markdown("""
     **점수 의미 (참고)**  
