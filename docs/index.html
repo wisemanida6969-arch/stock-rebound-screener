@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="스크리너" />
+  <meta name="description" content="서버 없음 · 폰만으로 실시간 차트" />
+  <link rel="manifest" href="manifest.json" />
+  <title>스크리너 · 서버 없음</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #0f0f14; color: #e8e8ed; min-height: 100dvh; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+    .badge { background: #1e3a2f; color: #7dffb3; padding: 8px 10px; border-radius: 8px; font-size: 0.72rem; line-height: 1.45; margin-bottom: 12px; }
+    h1 { font-size: 1.15rem; margin: 0 0 6px; }
+    .sub { color: #888; font-size: 0.78rem; margin-bottom: 14px; line-height: 1.45; }
+    .box { border: 1px solid #2a2a35; border-radius: 10px; padding: 12px; margin-bottom: 14px; background: #16161f; }
+    .box h3 { margin: 0 0 10px; font-size: 0.95rem; color: #ff6b35; }
+    input[type="text"] { width: 100%; padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 8px; }
+    button { width: 100%; padding: 14px; font-size: 1rem; font-weight: 600; background: #ff6b35; color: #111; border: none; border-radius: 10px; cursor: pointer; margin-bottom: 6px; }
+    button.secondary { background: #333; color: #eee; }
+    button:disabled { opacity: 0.5; }
+    .progress { height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin: 8px 0; display: none; }
+    .progress i { display: block; height: 100%; background: #ff6b35; width: 0%; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+    th, td { padding: 8px 5px; text-align: left; border-bottom: 1px solid #2a2a35; }
+    th { color: #aaa; position: sticky; top: 0; background: #16161f; }
+    tr.active { background: #2a2018; }
+    tr { cursor: pointer; }
+    #wrap-table { overflow-x: auto; max-height: 32vh; margin-top: 8px; border-radius: 8px; border: 1px solid #2a2a35; }
+    #chart { width: 100%; height: 380px; margin-top: 8px; border-radius: 8px; }
+    .live { font-size: 0.72rem; color: #8f8; margin-top: 6px; min-height: 1.2em; }
+    select { width: 100%; padding: 10px; margin: 6px 0; background: #222; color: #fff; border: 1px solid #444; border-radius: 8px; }
+    label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.85rem; }
+    details { font-size: 0.8rem; color: #888; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="badge" id="badge">
+    <b>PC 연결 불필요</b> — 폰만으로 사용.<br />
+    <span id="api-hint"><b>Vercel에 올리면</b> 서버가 Yahoo 대신 받아줘서 <b>프록시 실패 없이</b> 안정적입니다. (아래 배포 안내)</span>
+  </div>
+  <h1>실시간 차트</h1>
+  <p class="sub">같은 주소에 <code>/api/chart</code> 가 있으면 자동 사용 · 없으면 무료 프록시 순차 시도.</p>
+
+  <div class="box">
+    <h3>① 티커만 넣고 바로 보기 (가장 빠름)</h3>
+    <input type="text" id="quick" placeholder="예: AAPL, NVDA, TSLA" value="AAPL" autocomplete="off" autocapitalize="characters" />
+    <button type="button" id="btn-quick">실시간 차트 (1분봉 · 15초 갱신)</button>
+    <div class="live" id="live-msg"></div>
+    <div id="chart" style="display:none"></div>
+  </div>
+
+  <div class="box">
+    <h3>② 스크리너 (일봉 순위 + 종목 탭 시 분봉)</h3>
+    <select id="n" aria-label="종목 수"><option value="15">15종목</option><option value="22" selected>22종목</option><option value="28">28종목</option></select>
+    <label><input type="checkbox" id="live" checked /> 선택 종목 차트 자동 갱신 (15초 · 화면 켜져 있을 때만)</label>
+    <button type="button" class="secondary" id="run">스크리닝 실행</button>
+    <div class="progress" id="prog"><i id="progi"></i></div>
+    <div id="wrap-table" style="display:none">
+      <table><thead><tr><th>티커</th><th>점수</th><th>RSI</th><th>낙폭%</th><th>종가</th></tr></thead><tbody id="tb"></tbody></table>
+    </div>
+  </div>
+
+  <details open>
+    <summary><b>Vercel 배포 (안정 · 추천)</b></summary>
+    <ol style="margin:8px 0;padding-left:18px;line-height:1.5">
+      <li>GitHub에 이 저장소 푸시</li>
+      <li><a href="https://vercel.com" target="_blank" rel="noopener">vercel.com</a> 가입 → Add New → Project → 저장소 Import</li>
+      <li>Root Directory 비워 둠 (프로젝트 루트에 <code>api/chart.js</code> + 루트 <code>index.html</code> 필요)</li>
+      <li>Deploy 후 나온 <code>https://xxx.vercel.app</code> 를 폰에 저장</li>
+    </ol>
+    <p style="margin:0;font-size:0.8rem;color:#888">루트에 index.html 이 없으면 이 폴더의 내용을 루트에 맞춰 넣었는지 확인하세요. 배포용 파일은 README 참고.</p>
+  </details>
+  <details>
+    <summary>GitHub Pages만 쓸 때</summary>
+    Pages는 API 없음 → 프록시만 사용. 막히면 Vercel 쪽을 쓰는 것이 좋습니다.
+  </details>
+
+  <script>
+  const TICKERS = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","JPM","V","UNH","JNJ","WMT","PG","MA","HD","DIS","BAC","XOM","CVX","ABBV","PFE","KO","COST","MRK","PEP","TMO","CSCO","ADBE","AMD","INTC","NFLX","CRM","GE","CAT","F","GM","PYPL","DAL","MAR"];
+
+  const LIVE_MS = 15000;
+  let liveTimer = null, chartTicker = null, chartInited = false;
+  let liveRange = "1d", liveInterval = "1m";
+
+  function rsi(closes, p = 14) {
+    if (closes.length < p + 1) return null;
+    let gains = 0, losses = 0;
+    for (let i = 1; i <= p; i++) {
+      const d = closes[i] - closes[i - 1];
+      if (d >= 0) gains += d; else losses -= d;
+    }
+    let avgG = gains / p, avgL = losses / p;
+    for (let i = p + 1; i < closes.length; i++) {
+      const d = closes[i] - closes[i - 1];
+      const g = d > 0 ? d : 0, l = d < 0 ? -d : 0;
+      avgG = (avgG * (p - 1) + g) / p;
+      avgL = (avgL * (p - 1) + l) / p;
+    }
+    if (avgL === 0) return 100;
+    return 100 - 100 / (1 + avgG / avgL);
+  }
+
+  function parseYahooJson(text) {
+    if (!text || typeof text !== "string") return null;
+    let s = text.trim();
+    if (s.startsWith("\ufeff")) s = s.slice(1);
+    const i = s.indexOf("{");
+    if (i > 0) s = s.slice(i);
+    try {
+      const j = JSON.parse(s);
+      if (j.contents && typeof j.contents === "string") return parseYahooJson(j.contents);
+      return j;
+    } catch (e) { return null; }
+  }
+
+  function rowsFromYahoo(j) {
+    const r0 = j && j.chart && j.chart.result && j.chart.result[0];
+    if (!r0 || !r0.timestamp || !r0.indicators || !r0.indicators.quote || !r0.indicators.quote[0]) return null;
+    const ts = r0.timestamp, q = r0.indicators.quote[0];
+    const o = q.open, h = q.high, l = q.low, c = q.close;
+    const closes = [], rows = [];
+    for (let i = 0; i < ts.length; i++) {
+      if (c[i] == null) continue;
+      closes.push(c[i]);
+      rows.push({ t: ts[i] * 1000, o: o[i], h: h[i], l: l[i], c: c[i] });
+    }
+    return rows.length ? { closes, rows } : null;
+  }
+
+  async function fetchText(proxyUrl) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 28000);
+    try {
+      const r = await fetch(proxyUrl, { cache: "no-store", signal: ctrl.signal, mode: "cors" });
+      if (!r.ok) throw new Error(String(r.status));
+      return await r.text();
+    } finally { clearTimeout(t); }
+  }
+
+  function apiOrigin() {
+    try {
+      if (typeof localStorage !== "undefined" && localStorage.getItem("API_ORIGIN"))
+        return String(localStorage.getItem("API_ORIGIN")).replace(/\/$/, "");
+    } catch (e) {}
+    if (typeof location !== "undefined" && (location.protocol === "https:" || location.protocol === "http:"))
+      return location.origin;
+    return "";
+  }
+
+  async function yahooChart(ticker, range, interval) {
+    const sym = ticker.trim().toUpperCase().replace(/^\+/, "");
+    const origin = apiOrigin();
+    if (origin) {
+      try {
+        const apiUrl =
+          origin +
+          "/api/chart?ticker=" +
+          encodeURIComponent(sym) +
+          "&range=" +
+          encodeURIComponent(range) +
+          "&interval=" +
+          encodeURIComponent(interval);
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 25000);
+        try {
+          const r = await fetch(apiUrl, { cache: "no-store", signal: ctrl.signal });
+          if (r.ok) {
+            const j = await r.json();
+            if (!j.error && j.chart) {
+              const out = rowsFromYahoo(j);
+              if (out) return out;
+            }
+          }
+        } finally {
+          clearTimeout(to);
+        }
+      } catch (e) {}
+    }
+    const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(sym) + "?range=" + range + "&interval=" + interval;
+    const proxyUrls = [
+      "https://api.allorigins.win/get?url=" + encodeURIComponent(url),
+      "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+      "https://corsproxy.io/?" + encodeURIComponent(url),
+      "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
+    ];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      for (const pu of proxyUrls) {
+        try {
+          const text = await fetchText(pu);
+          const j = parseYahooJson(text);
+          if (!j) continue;
+          const out = rowsFromYahoo(j);
+          if (out) return out;
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 400));
+      }
+    }
+    if (interval !== "1d" || range !== "1y") {
+      return yahooChart(sym, "1y", "1d");
+    }
+    throw new Error("fetch failed");
+  }
+
+  function drawChart(ticker, rows, label) {
+    const x = rows.map(r => new Date(r.t));
+    const candle = { x, open: rows.map(r => r.o), high: rows.map(r => r.h), low: rows.map(r => r.l), close: rows.map(r => r.c), type: "candlestick", xaxis: "x", yaxis: "y" };
+    const closes = rows.map(r => r.c);
+    const rsiSeries = [];
+    for (let i = 0; i < closes.length; i++) {
+      const slice = closes.slice(0, i + 1);
+      rsiSeries.push(slice.length >= 15 ? rsi(slice) : null);
+    }
+    const rsiTrace = { x, y: rsiSeries, type: "scatter", xaxis: "x2", yaxis: "y2", line: { color: "#fa0", width: 1 } };
+    const layout = {
+      paper_bgcolor: "#16161f", plot_bgcolor: "#16161f", font: { color: "#ccc" },
+      xaxis: { anchor: "y", domain: [0, 1], rangeslider: { visible: false } },
+      yaxis: { domain: [0.38, 1], title: "가격" },
+      xaxis2: { anchor: "y2", domain: [0, 1] },
+      yaxis2: { domain: [0, 0.3], title: "RSI" },
+      margin: { l: 40, r: 8, t: 32, b: 16 },
+      height: 380,
+      showlegend: false,
+      title: { text: ticker + " · " + label + " · " + new Date().toLocaleTimeString(), font: { size: 11 } }
+    };
+    document.getElementById("chart").style.display = "block";
+    if (chartInited) Plotly.react("chart", [candle, rsiTrace], layout, { responsive: true, displayModeBar: true });
+    else { Plotly.newPlot("chart", [candle, rsiTrace], layout, { responsive: true, displayModeBar: true }); chartInited = true; }
+  }
+
+  function stopLive() { if (liveTimer) { clearInterval(liveTimer); liveTimer = null; } }
+
+  function startLive() {
+    stopLive();
+    liveTimer = setInterval(async () => {
+      if (document.hidden || !chartTicker) return;
+      try {
+        const { rows } = await yahooChart(chartTicker, liveRange, liveInterval);
+        if (rows.length) drawChart(chartTicker, rows, liveInterval === "1m" ? "1분봉·당일" : "5분봉");
+        document.getElementById("live-msg").textContent = "갱신 " + new Date().toLocaleTimeString() + " · API/프록시";
+      } catch (e) {
+        document.getElementById("live-msg").textContent = "갱신 실패 · Wi‑Fi로 전환 후 재시도";
+      }
+    }, LIVE_MS);
+  }
+
+  document.getElementById("btn-quick").onclick = async function () {
+    const t = document.getElementById("quick").value.trim().toUpperCase() || "AAPL";
+    chartTicker = t;
+    liveRange = "1d";
+    liveInterval = "1m";
+    this.disabled = true;
+    document.getElementById("live-msg").textContent = "불러오는 중… (Vercel API 우선)";
+    try {
+      let rows, label = "1분봉";
+      try {
+        const r = await yahooChart(t, "1d", "1m");
+        rows = r.rows;
+        liveRange = "1d"; liveInterval = "1m";
+      } catch (e1) {
+        try {
+          const r = await yahooChart(t, "5d", "5m");
+          rows = r.rows;
+          liveRange = "5d"; liveInterval = "5m";
+          label = "5분봉";
+        } catch (e2) {
+          const r = await yahooChart(t, "3mo", "1d");
+          rows = r.rows;
+          liveRange = "3mo"; liveInterval = "1d";
+          label = "일봉(폴백)";
+        }
+      }
+      if (rows.length) drawChart(t, rows, label);
+      document.getElementById("live-msg").textContent = "갱신됨 · 15초마다 (일봉 폴백 시 느림) · Wi‑Fi 권장";
+      startLive();
+    } catch (e) {
+      document.getElementById("live-msg").innerHTML =
+        "<span style='color:#f88'>데이터 수신 실패</span><br>" +
+        "① Wi‑Fi로 바꿔 보기 ② 잠시 후 다시 누르기 ③ 티커 영문 대문자(AAPL) ④ VPN 끄기/켜기<br>" +
+        "<small style='color:#888'><b>Vercel 배포</b>하면 대부분 해결됩니다. (상단 안내)</small>";
+    }
+    this.disabled = false;
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && chartTicker && document.getElementById("live").checked) startLive();
+  });
+
+  function scoreRow(closes, rsiVal) {
+    if (closes.length < 30) return { total: 0, dd: 0 };
+    const hi = Math.max(...closes), last = closes[closes.length - 1];
+    const dd = hi > 0 ? ((hi - last) / hi) * 100 : 0;
+    let s = 0;
+    if (dd > 25) s += 25; else if (dd > 15) s += 18; else if (dd > 8) s += 10;
+    if (rsiVal != null) {
+      if (rsiVal >= 22 && rsiVal <= 38) s += 30;
+      else if (rsiVal > 38 && rsiVal <= 45) s += 18;
+      else if (rsiVal < 22) s += 20;
+      else if (rsiVal <= 55) s += 8;
+    }
+    return { total: Math.round(s * 10) / 10, dd: Math.round(dd * 10) / 10 };
+  }
+
+  let rowsData = [];
+  document.getElementById("run").onclick = async function () {
+    const btn = this, n = parseInt(document.getElementById("n").value, 10);
+    const list = TICKERS.slice(0, n);
+    btn.disabled = true;
+    stopLive();
+    document.getElementById("prog").style.display = "block";
+    document.getElementById("wrap-table").style.display = "none";
+    rowsData = [];
+    const tb = document.getElementById("tb");
+    tb.innerHTML = "";
+    for (let i = 0; i < list.length; i++) {
+      document.getElementById("progi").style.width = ((i + 1) / list.length * 100) + "%";
+      try {
+        const { closes, rows } = await yahooChart(list[i], "1y", "1d");
+        const r = rsi(closes);
+        const sc = scoreRow(closes, r);
+        rowsData.push({ ticker: list[i], total: sc.total, rsi: r != null ? Math.round(r * 10) / 10 : "-", dd: sc.dd, last: closes[closes.length - 1], rowsDay: rows });
+      } catch (e) {
+        rowsData.push({ ticker: list[i], total: 0, rsi: "-", dd: 0, last: 0, rowsDay: null });
+      }
+      await new Promise(r => setTimeout(r, 260));
+    }
+    rowsData.sort((a, b) => b.total - a.total);
+    rowsData.forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = "<td><b>" + row.ticker + "</b></td><td>" + row.total + "</td><td>" + row.rsi + "</td><td>" + row.dd + "</td><td>" + (row.last || "-") + "</td>";
+      tr.onclick = async () => {
+        document.querySelectorAll("#tb tr").forEach(x => x.classList.remove("active"));
+        tr.classList.add("active");
+        chartTicker = row.ticker;
+        liveRange = "1d";
+        liveInterval = "1m";
+        try {
+          const { rows } = await yahooChart(row.ticker, "1d", "1m");
+          if (rows.length) { drawChart(row.ticker, rows, "1분봉"); }
+          else throw 0;
+        } catch (e) {
+          try {
+            const { rows } = await yahooChart(row.ticker, "5d", "5m");
+            liveRange = "5d"; liveInterval = "5m";
+            if (rows.length) drawChart(row.ticker, rows, "5분봉");
+            else if (row.rowsDay) drawChart(row.ticker, row.rowsDay, "일봉");
+          } catch (e2) {
+            if (row.rowsDay) drawChart(row.ticker, row.rowsDay, "일봉");
+          }
+        }
+        document.getElementById("chart").scrollIntoView({ behavior: "smooth", block: "start" });
+        if (document.getElementById("live").checked) startLive();
+        document.getElementById("live-msg").textContent = "15초 갱신";
+      };
+      tb.appendChild(tr);
+    });
+    document.getElementById("wrap-table").style.display = "block";
+    btn.disabled = false;
+    document.getElementById("prog").style.display = "none";
+  };
+
+  document.getElementById("live").onchange = function () {
+    if (this.checked && chartTicker) startLive();
+    else stopLive();
+  };
+
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+  </script>
+</body>
+</html>

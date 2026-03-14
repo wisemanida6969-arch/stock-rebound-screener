@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+.env
+.idea/
+bin/cloudflared
+bin/cloudflared.exe
+docs/sw.zip

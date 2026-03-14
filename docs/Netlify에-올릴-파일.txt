@@ -1,0 +1,9 @@
+Netlify Drop / 정적 호스팅에 올릴 파일 (이 폴더 안 전부)
+===============================================
+index.html
+manifest.json
+sw.js
+(이 txt는 없어도 됨)
+
+ZIP 만들 때: 이 3개가 ZIP 루트에 바로 들어가게 압축하세요.
+그런 다음 https://app.netlify.com/drop 에 ZIP 드롭 → 나온 주소를 폰에 저장하면 PC 없이 단독 사용 가능합니다.

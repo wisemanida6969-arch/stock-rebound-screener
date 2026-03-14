@@ -1,0 +1,12 @@
+# Streamlit Cloud / 모바일 접속용 (배포 시 서버 설정)
+[server]
+headless = true
+enableCORS = true
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#FF6B35"
