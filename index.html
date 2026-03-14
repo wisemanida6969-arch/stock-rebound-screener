@@ -56,7 +56,7 @@
 
   <div class="box">
     <h3>② 스크리너 (일봉 순위 + 종목 탭 시 분봉)</h3>
-    <select id="n" aria-label="종목 수"><option value="15">15종목</option><option value="22" selected>22종목</option><option value="28">28종목</option></select>
+    <select id="n" aria-label="종목 수"><option value="12" selected>12종목 (빠름)</option><option value="18">18종목</option><option value="24">24종목</option></select>
     <label><input type="checkbox" id="live" checked /> 선택 종목 차트 자동 갱신 (15초 · 화면 켜져 있을 때만)</label>
     <button type="button" class="secondary" id="run">스크리닝 실행</button>
     <div class="progress" id="prog"><i id="progi"></i></div>
@@ -83,7 +83,8 @@
   <script>
   const TICKERS = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","JPM","V","UNH","JNJ","WMT","PG","MA","HD","DIS","BAC","XOM","CVX","ABBV","PFE","KO","COST","MRK","PEP","TMO","CSCO","ADBE","AMD","INTC","NFLX","CRM","GE","CAT","F","GM","PYPL","DAL","MAR"];
 
-  const LIVE_MS = 15000;
+  const LIVE_MS = 25000;
+  const SCRAPE_CONCURRENCY = 10;
   let liveTimer = null, chartTicker = null, chartInited = false;
   let liveRange = "1d", liveInterval = "1m";
 
@@ -188,7 +189,7 @@
       "https://corsproxy.io/?" + encodeURIComponent(url),
       "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
     ];
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 1; attempt++) {
       for (const pu of proxyUrls) {
         try {
           const text = await fetchText(pu);
@@ -197,7 +198,7 @@
           const out = rowsFromYahoo(j);
           if (out) return out;
         } catch (e) {}
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 80));
       }
     }
     if (interval !== "1d" || range !== "1y") {
@@ -305,6 +306,19 @@
     return { total: Math.round(s * 10) / 10, dd: Math.round(dd * 10) / 10 };
   }
 
+  async function runPool(items, worker, n) {
+    const ret = new Array(items.length);
+    let i = 0;
+    async function one() {
+      while (i < items.length) {
+        const idx = i++;
+        try { ret[idx] = await worker(items[idx], idx); } catch (e) { ret[idx] = null; }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(n, items.length) }, () => one()));
+    return ret;
+  }
+
   let rowsData = [];
   document.getElementById("run").onclick = async function () {
     const btn = this, n = parseInt(document.getElementById("n").value, 10);
@@ -312,22 +326,27 @@
     btn.disabled = true;
     stopLive();
     document.getElementById("prog").style.display = "block";
+    document.getElementById("progi").style.width = "0%";
     document.getElementById("wrap-table").style.display = "none";
     rowsData = [];
     const tb = document.getElementById("tb");
     tb.innerHTML = "";
-    for (let i = 0; i < list.length; i++) {
-      document.getElementById("progi").style.width = ((i + 1) / list.length * 100) + "%";
+    let done = 0;
+    const results = await runPool(list, async (t) => {
       try {
-        const { closes, rows } = await yahooChart(list[i], "1y", "1d");
+        const { closes, rows } = await yahooChart(t, "6mo", "1d");
         const r = rsi(closes);
         const sc = scoreRow(closes, r);
-        rowsData.push({ ticker: list[i], total: sc.total, rsi: r != null ? Math.round(r * 10) / 10 : "-", dd: sc.dd, last: closes[closes.length - 1], rowsDay: rows });
+        done++;
+        document.getElementById("progi").style.width = (done / list.length * 100) + "%";
+        return { ticker: t, total: sc.total, rsi: r != null ? Math.round(r * 10) / 10 : "-", dd: sc.dd, last: closes[closes.length - 1], rowsDay: rows };
       } catch (e) {
-        rowsData.push({ ticker: list[i], total: 0, rsi: "-", dd: 0, last: 0, rowsDay: null });
+        done++;
+        document.getElementById("progi").style.width = (done / list.length * 100) + "%";
+        return { ticker: t, total: 0, rsi: "-", dd: 0, last: 0, rowsDay: null };
       }
-      await new Promise(r => setTimeout(r, 260));
-    }
+    }, SCRAPE_CONCURRENCY);
+    rowsData = results.filter(Boolean);
     rowsData.sort((a, b) => b.total - a.total);
     rowsData.forEach((row) => {
       const tr = document.createElement("tr");

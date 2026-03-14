@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 유동성 있는 대형·중형주 샘플 (전체 스크리닝은 API 한계로 샘플 유니버스)
 DEFAULT_TICKERS = [
@@ -29,30 +30,82 @@ DEFAULT_TICKERS = [
 ]
 
 
-@st.cache_data(ttl=3600)
-def fetch_batch_info(tickers: list) -> pd.DataFrame:
+def _one_info(t: str) -> dict:
+    try:
+        info = yf.Ticker(t).info
+        return {
+            "ticker": t,
+            "name": info.get("shortName") or info.get("longName") or t,
+            "sector": info.get("sector") or "-",
+            "trailing_pe": info.get("trailingPE"),
+            "forward_pe": info.get("forwardPE"),
+            "pb": info.get("priceToBook"),
+            "market_cap": info.get("marketCap"),
+            "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+            "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+            "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+            "revenue_growth": info.get("revenueGrowth"),
+            "debt_to_equity": info.get("debtToEquity"),
+        }
+    except Exception:
+        return {"ticker": t, "name": t}
+
+
+@st.cache_data(ttl=1800)
+def fetch_batch_info(tickers: tuple) -> pd.DataFrame:
+    """병렬 info — 티커 많을 때 순차 대비 훨씬 빠름"""
+    tickers = list(tickers)
     rows = []
-    for t in tickers:
-        try:
-            info = yf.Ticker(t).info
-            rows.append({
-                "ticker": t,
-                "name": info.get("shortName") or info.get("longName") or t,
-                "sector": info.get("sector") or "-",
-                "trailing_pe": info.get("trailingPE"),
-                "forward_pe": info.get("forwardPE"),
-                "pb": info.get("priceToBook"),
-                "market_cap": info.get("marketCap"),
-                "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
-                "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
-                "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-                "revenue_growth": info.get("revenueGrowth"),
-                "debt_to_equity": info.get("debtToEquity"),
-            })
-            time.sleep(0.08)
-        except Exception:
-            rows.append({"ticker": t, "name": t})
+    with ThreadPoolExecutor(max_workers=min(16, max(4, len(tickers)))) as ex:
+        futs = {ex.submit(_one_info, t): t for t in tickers}
+        for fut in as_completed(futs):
+            rows.append(fut.result())
+    order = {t: i for i, t in enumerate(tickers)}
+    rows.sort(key=lambda r: order.get(r["ticker"], 999))
     return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=900)
+def fetch_ohlc_batch(tickers: tuple, months: int = 6) -> dict:
+    """한 번에 여러 종목 일봉 — 네트워크 왕복 대폭 감소"""
+    tickers = list(tickers)
+    if not tickers:
+        return {}
+    end = datetime.now()
+    start = end - timedelta(days=months * 31)
+    s = " ".join(tickers)
+    try:
+        df = yf.download(s, start=start, end=end, progress=False, auto_adjust=True, threads=True, group_by="ticker")
+    except Exception:
+        return {}
+    out = {}
+    if isinstance(df.columns, pd.MultiIndex):
+        lev0 = df.columns.get_level_values(0).unique()
+        for t in tickers:
+            try:
+                if t not in lev0:
+                    continue
+                sub = df[t]
+                if hasattr(sub, "columns") and len(sub) >= 10:
+                    sub = sub.copy()
+                    if isinstance(sub.columns, pd.MultiIndex):
+                        sub.columns = [c[0] if isinstance(c, tuple) else c for c in sub.columns]
+                    out[t] = sub
+            except Exception:
+                pass
+    elif len(tickers) == 1 and len(df) >= 10:
+        out[tickers[0]] = df
+    missing = [t for t in tickers if t not in out]
+    for t in missing:
+        try:
+            d = yf.download(t, start=start, end=end, progress=False, auto_adjust=True)
+            if isinstance(d.columns, pd.MultiIndex):
+                d.columns = [c[0] for c in d.columns]
+            if len(d) >= 10:
+                out[t] = d
+        except Exception:
+            pass
+    return out
 
 
 def rsi(series: pd.Series, period: int = 14) -> pd.Series:
@@ -148,7 +201,7 @@ def fundamental_value_score(row: pd.Series) -> float:
     return score
 
 
-@st.fragment(run_every=45)
+@st.fragment(run_every=90)
 def render_live_chart(ticker: str, interval_label: str):
     """분봉 + 45초마다 자동 갱신 (장중·야간 프리/마켓 반영 지연 가능)"""
     df = fetch_ohlc_intraday(ticker, interval="5m")
@@ -183,7 +236,7 @@ def render_live_chart(ticker: str, interval_label: str):
     fig.update_yaxes(title_text="가격", row=1, col=1)
     fig.update_yaxes(title_text="RSI", row=2, col=1)
     st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True})
-    st.caption("실시간에 가깝게: Yahoo 5분봉 · 약 45초마다 자동 새로고침 (정규장 외 구간은 봉이 멈출 수 있음)")
+    st.caption("5분봉 · 약 90초마다 갱신 (부하 줄임)")
 
 
 def main():
@@ -213,7 +266,7 @@ def main():
     st.caption("폰에서 그대로 사용 · 스크리닝 시 Yahoo 기준 · 참고용")
 
     # 모바일 우선: 메인 화면에만 설정 (사이드바 불필요)
-    max_n = st.slider("분석 종목 수", 15, min(80, len(DEFAULT_TICKERS)), 28)
+    max_n = st.slider("분석 종목 수 (많을수록 느림)", 12, min(50, len(DEFAULT_TICKERS)), 20)
     with st.expander("추가 티커 (선택)", expanded=False):
         custom_in = st.text_input("쉼표 구분", placeholder="COIN, MRNA")
     run = st.button("스크리닝 실행", type="primary", use_container_width=True)
@@ -233,14 +286,16 @@ def main():
         return
 
     if do_run:
-        with st.spinner("재무 데이터 수집 중…"):
-            base = fetch_batch_info(tickers)
+        with st.spinner("일괄 수집 중 (배치 다운로드)…"):
+            base = fetch_batch_info(tuple(tickers))
+            ohlc_map = fetch_ohlc_batch(tuple(tickers), months=6)
         results = []
-        prog = st.progress(0)
-        for i, (_, row) in enumerate(base.iterrows()):
+        for _, row in base.iterrows():
             t = row["ticker"]
             try:
-                ohlc = fetch_ohlc(t)
+                ohlc = ohlc_map.get(t)
+                if ohlc is None or len(ohlc) < 20:
+                    ohlc = fetch_ohlc(t, months=6)
                 tech = compute_technical_score(ohlc)
                 fscore = fundamental_value_score(row)
                 high = row.get("fifty_two_week_high")
@@ -263,8 +318,6 @@ def main():
                 })
             except Exception:
                 results.append({"티커": t, "총점": 0})
-            prog.progress((i + 1) / len(base))
-        prog.empty()
         st.session_state["results"] = pd.DataFrame(results)
         st.session_state["base_df"] = base
 
