@@ -70,6 +70,8 @@
     th, td { padding: 14px 8px; text-align: left; border-bottom: 1px solid #2c2c34; }
     th { color: #8e8e93; font-weight: 600; }
     tr.active { background: #2a2218; }
+    tr.houbu-row { background: rgba(255,140,60,.08); }
+    .houbu { background: #3d2918; color: #ffc266; font-size: 0.68rem; font-weight: 700; padding: 4px 8px; border-radius: 8px; border: 1px solid #6b4420; }
     #wrap-table { max-height: 38vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; border: 1px solid #2c2c34; margin-top: 10px; }
     .progress { height: 5px; background: #2c2c34; border-radius: 3px; overflow: hidden; margin: 10px 0; display: none; }
     .progress i { display: block; height: 100%; background: #ff6b35; width: 0%; }
@@ -116,9 +118,9 @@
     <label><input type="checkbox" id="live" checked /> 차트 자동 갱신</label>
     <button type="button" class="btn secondary" id="run">순위 스크리닝</button>
     <div class="progress" id="prog"><i id="progi"></i></div>
-    <p class="hint" style="margin-top:0">왼쪽 <b>✓</b> 체크 → <b>차트</b> 탭에서만 그 종목 차트 가능.</p>
+    <p class="hint" style="margin-top:0"><b>후보1~5</b> = 점수 상위 (저평가·반등 참고) · ✓ 체크 후 차트 탭</p>
     <div id="wrap-table" style="display:none">
-      <table><thead><tr><th style="width:36px">✓</th><th>티커</th><th>점수</th><th>RSI</th></tr></thead><tbody id="tb"></tbody></table>
+      <table><thead><tr><th style="width:36px">✓</th><th style="width:64px">후보</th><th>티커</th><th>점수</th><th>RSI</th></tr></thead><tbody id="tb"></tbody></table>
     </div>
     <div id="chart-controls-ios" style="display:none;margin-top:12px">
       <label>체크한 종목 중 차트</label>
@@ -358,9 +360,11 @@
       document.getElementById("live-msg").textContent = "자동 갱신";
       if (document.getElementById("live").checked) startLive();
     }
-    results.filter(Boolean).sort(function (a, b) { return b.total - a.total; }).forEach(function (row) {
+    var sortedR = results.filter(Boolean).sort(function (a, b) { return b.total - a.total; });
+    sortedR.forEach(function (row, idx) {
       var tr = document.createElement("tr");
       tr.dataset.ticker = row.ticker;
+      if (idx < 5) tr.classList.add("houbu-row");
       var cb = document.createElement("input");
       cb.type = "checkbox";
       cb.className = "pick-ios";
@@ -369,6 +373,9 @@
       var td0 = document.createElement("td");
       td0.appendChild(cb);
       tr.appendChild(td0);
+      var tdH = document.createElement("td");
+      tdH.innerHTML = idx < 5 ? "<span class=\"houbu\">후보 " + (idx + 1) + "</span>" : "—";
+      tr.appendChild(tdH);
       var td1 = document.createElement("td");
       td1.innerHTML = "<b>" + row.ticker + "</b>";
       tr.appendChild(td1);
@@ -385,13 +392,13 @@
     document.getElementById("btn-chart-checked-ios").onclick = function () {
       var t = document.getElementById("chartFromChecked").value;
       if (!t) { document.getElementById("live-msg").textContent = "순위에서 ✓ 체크"; return; }
-      var row = results.filter(Boolean).find(function (r) { return r.ticker === t; });
+      var row = sortedR.find(function (r) { return r.ticker === t; });
       loadChartRow(row);
     };
     document.getElementById("btn-chart-ios").onclick = function () {
       var t = document.getElementById("chartSymbol-ios").value;
       if (!t) return;
-      var row = results.filter(Boolean).find(function (r) { return r.ticker === t; });
+      var row = sortedR.find(function (r) { return r.ticker === t; });
       setTab("chart");
       loadChartRow(row);
     };

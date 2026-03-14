@@ -325,8 +325,13 @@ def main():
         return
     out = st.session_state["results"].sort_values("총점", ascending=False)
     display_df = out.head(25).reset_index(drop=True)
+    houbu = [""] * len(display_df)
+    for i in range(min(5, len(display_df))):
+        houbu[i] = f"★ 후보 {i + 1}"
+    display_df = display_df.copy()
+    display_df.insert(0, "후보", houbu)
 
-    st.subheader("추천 순위")
+    st.subheader("추천 순위 (후보1~5 = 당일 점수 상위 · 참고용)")
     top20 = out.head(20)["티커"].tolist()
     allowed = st.multiselect(
         "**실시간 차트에 넣을 종목 (체크)** — 체크한 것만 아래 차트로 볼 수 있습니다.",
