@@ -1,0 +1,5 @@
+{
+  "name": "stock-rebound-screener",
+  "private": true,
+  "description": "Static + api/chart — no npm build"
+}
